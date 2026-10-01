@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flip 7 Online</title>
+<style>
+  :root { --bg:#14202b; --panel:#1d2d3b; --ink:#f2f5f7; --mut:#8fa3b3; --acc:#ffc233; --bad:#ff5a5f; --ok:#3ecf8e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:16px; }
+  h1 { margin:8px 0 16px; color:var(--acc); letter-spacing:1px; }
+  .panel { background:var(--panel); border-radius:12px; padding:16px; margin-bottom:12px; }
+  input, button { font:inherit; border-radius:8px; border:0; padding:10px 14px; }
+  input { background:#0f1923; color:var(--ink); border:1px solid #33475a; }
+  button { background:var(--acc); color:#222; font-weight:700; cursor:pointer; }
+  button.alt { background:#33475a; color:var(--ink); }
+  button:disabled { opacity:.4; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .err { color:var(--bad); min-height:1.4em; }
+  .code { font-size:2rem; letter-spacing:.3rem; color:var(--acc); font-weight:800; }
+  .players { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; }
+  .pl { background:var(--panel); border-radius:12px; padding:12px; border:2px solid transparent; }
+  .pl.turn { border-color:var(--acc); }
+  .pl.you .nm::after { content:" (you)"; color:var(--mut); font-weight:400; }
+  .pl.out { opacity:.75; }
+  .nm { font-weight:700; display:flex; justify-content:space-between; gap:8px; }
+  .st { font-size:.8rem; padding:2px 8px; border-radius:99px; background:#33475a; }
+  .st.busted { background:var(--bad); } .st.frozen { background:#5bb8ff; color:#012; } .st.stayed { background:var(--ok); color:#012; }
+  .cards { display:flex; flex-wrap:wrap; gap:4px; min-height:46px; margin:8px 0; }
+  .c { min-width:34px; height:46px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:800; background:#f5efe0; color:#222; padding:0 4px; font-size:.95rem; }
+  .c.m { background:#b388ff; } .c.a { background:#ff9f43; font-size:.7rem; text-align:center; line-height:1; }
+  .c.bust { background:var(--bad); color:#fff; }
+  .meta { color:var(--mut); font-size:.85rem; display:flex; justify-content:space-between; }
+  #log { max-height:180px; overflow:auto; font-size:.85rem; color:var(--mut); }
+  .banner { font-weight:700; margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding:4px 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>FLIP 7</h1>
+  <div id="app"></div>
+</main>
+<script>
+const $app = document.getElementById('app');
+let ws, S = null, err = '', joined = null; // joined = {code, token}
+try { joined = JSON.parse(localStorage.getItem('flip7') || 'null'); } catch {}
+
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => { if (joined) send({ type: 'rejoin', code: joined.code, token: joined.token }); render(); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'state') { S = m; err = ''; }
+    else if (m.type === 'joined') { joined = { code: m.code, token: m.token }; localStorage.setItem('flip7', JSON.stringify(joined)); }
+    else if (m.type === 'error') { err = m.msg; if (m.gone) { joined = null; S = null; localStorage.removeItem('flip7'); } }
+    render();
+  };
+  ws.onclose = () => { setTimeout(connect, 1500); };
+}
+const send = (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cardTxt = (c) => c.k === 'n' ? c.v : c.k === 'm' ? '+' + c.v : c.k === 'x' ? 'x2' : { freeze: 'Freeze', flip3: 'Flip 3', second: '2nd Chance' }[c.a];
+
+function cardsHtml(p) {
+  let h = [...p.numbers].sort((a, b) => a - b).map((n) => `<div class="c">${n}</div>`).join('');
+  h += p.mods.map((c) => `<div class="c m">${cardTxt(c)}</div>`).join('');
+  if (p.second) h += '<div class="c a">2nd Chance</div>';
+  if (p.bustCard) h += `<div class="c bust">${p.bustCard.v}</div>`;
+  return h;
+}
+
+function lobby() {
+  if (S) return '';
+  return `<div class="panel">
+    <div class="row"><input id="name" placeholder="Your name" maxlength="16" value="${esc(localStorage.getItem('flip7name') || '')}"></div>
+    <div class="row" style="margin-top:10px"><button id="create">Create room</button></div>
+    <div class="row" style="margin-top:10px"><input id="code" placeholder="Room code" maxlength="4" style="width:130px;text-transform:uppercase"><button class="alt" id="join">Join room</button></div>
+    <div class="err">${esc(err)}</div>
+    <p class="meta">Get to ${200} points. Hit to draw, stay to bank. A duplicate number busts you. Seven different numbers = Flip 7 (+15)!</p>
+  </div>`;
+}
+
+function render() {
+  if (!S) { $app.innerHTML = lobby(); bindLobby(); return; }
+  const me = S.players.find((p) => p.id === S.you);
+  const host = S.hostId === S.you;
+  const byId = (id) => S.players.find((p) => p.id === id);
+  let top = `<div class="panel"><div class="row" style="justify-content:space-between"><div>Room <span class="code">${S.code}</span></div><div class="row"><button class="alt" id="leave">Leave</button></div></div>`;
+  if (S.phase === 'lobby') {
+    top += `<p>Share the code. ${S.players.length} player(s) joined.</p>
+      ${host ? `<button id="start" ${S.players.length < 2 ? 'disabled' : ''}>Start game</button>` : '<p class="meta">Waiting for host to start…</p>'}`;
+  } else {
+    const t = S.turnId && byId(S.turnId);
+    let msg = '';
+    if (S.pending) {
+      const who = byId(S.pending.pid);
+      msg = S.pending.pid === S.you
+        ? `Play <b>${cardTxt(S.pending.card)}</b> — choose a player:`
+        : `${esc(who.name)} is choosing a target for ${cardTxt(S.pending.card)}…`;
+    } else if (S.phase === 'play' && t) msg = t.id === S.you ? 'Your turn!' : `${esc(t.name)}'s turn`;
+    else if (S.phase === 'roundEnd') msg = 'Round over';
+    else if (S.phase === 'over') msg = `🏆 ${esc(byId(S.winner).name)} wins!`;
+    top += `<div class="banner">Round ${S.round} · Deck ${S.deckCount} · First to ${S.target} · ${msg}</div>`;
+    if (S.pending && S.pending.pid === S.you) {
+      top += `<div class="row">${S.pending.options.map((id) => `<button class="tgt" data-id="${id}">${esc(byId(id).name)}${id === S.you ? ' (you)' : ''}</button>`).join('')}</div>`;
+    } else if (S.phase === 'play' && S.turnId === S.you) {
+      top += `<div class="row"><button id="hit">Hit</button><button class="alt" id="stay">Stay (${me.score})</button></div>`;
+    }
+    if (S.phase === 'roundEnd' || S.phase === 'over') {
+      top += '<table>' + S.lastRound.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.busted ? 'Bust' : '+' + r.pts}${r.flip7 ? ' ⭐ Flip 7' : ''}</td></tr>`).join('') + '</table>';
+      if (host) top += `<div class="row" style="margin-top:8px"><button id="${S.phase === 'over' ? 'again' : 'next'}">${S.phase === 'over' ? 'Play again' : 'Next round'}</button></div>`;
+      else top += '<p class="meta">Waiting for host…</p>';
+    }
+  }
+  top += `<div class="err">${esc(err)}</div></div>`;
+
+  const pls = S.players.map((p) => {
+    const out = p.status !== 'active' && S.phase !== 'lobby';
+    return `<div class="pl ${p.id === S.you ? 'you' : ''} ${p.id === S.turnId ? 'turn' : ''} ${out ? 'out' : ''}">
+      <div class="nm"><span>${esc(p.name)}${p.connected ? '' : ' 💤'}${p.id === S.hostId ? ' 👑' : ''}</span>${S.phase !== 'lobby' && p.status !== 'active' ? `<span class="st ${p.status}">${p.status}</span>` : ''}</div>
+      <div class="cards">${cardsHtml(p)}</div>
+      <div class="meta"><span>Round: ${p.score}${p.flip7 ? ' ⭐' : ''}</span><span>Total: <b>${p.total}</b></span></div>
+    </div>`;
+  }).join('');
+
+  $app.innerHTML = top + (S.phase === 'lobby' ? `<div class="players">${pls}</div>` : `<div class="players">${pls}</div><div class="panel" style="margin-top:12px"><div id="log">${S.log.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join('')}</div></div>`);
+  const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
+  on('start', () => send({ type: 'start' }));
+  on('hit', () => send({ type: 'hit' }));
+  on('stay', () => send({ type: 'stay' }));
+  on('next', () => send({ type: 'next' }));
+  on('again', () => send({ type: 'again' }));
+  on('leave', () => { send({ type: 'leave' }); joined = null; S = null; localStorage.removeItem('flip7'); render(); });
+  document.querySelectorAll('.tgt').forEach((b) => { b.onclick = () => send({ type: 'target', id: b.dataset.id }); });
+}
+
+function bindLobby() {
+  const name = () => { const n = document.getElementById('name').value; localStorage.setItem('flip7name', n); return n; };
+  const c = document.getElementById('create'), j = document.getElementById('join');
+  if (c) c.onclick = () => send({ type: 'create', name: name() });
+  if (j) j.onclick = () => send({ type: 'join', code: document.getElementById('code').value, name: name() });
+}
+
+connect();
+render();
+</script>
+</body>
+</html>
