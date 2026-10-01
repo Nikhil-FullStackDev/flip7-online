@@ -38,6 +38,7 @@ class Game {
     this.dealer = 0;
     this.round = 0;
     this.log = [];
+    this.seq = 0;
     this.queue = [];
     this.pending = null;
     this.turn = -1;
@@ -50,6 +51,7 @@ class Game {
   }
 
   say(msg) {
+    this.seq++;
     this.log.push(msg);
     if (this.log.length > 60) this.log.shift();
   }
@@ -290,6 +292,16 @@ class Game {
       const pl = this.players[this.turn];
       if (!pl.connected) return this.stay(pl.id);
     }
+    return false;
+  }
+
+  // Turn timer expiry: act for the player who is stalling.
+  forceAct() {
+    if (this.pending) {
+      const o = this.pending.options.find((id) => id !== this.pending.pid) || this.pending.options[0];
+      return this.choose(this.pending.pid, o);
+    }
+    if (this.phase === 'play' && this.awaiting) return this.stay(this.players[this.turn].id);
     return false;
   }
 
