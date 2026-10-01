@@ -161,7 +161,7 @@ function render() {
   let h = '';
 
   h += `<div class="top"><div class="chip" id="share" title="Copy invite link">${S.code}</div><div class="chip s" id="share2">🔗 Invite</div><div class="spacer"></div>
-        ${S.phase !== 'lobby' ? `<div class="chip s">Round ${S.round}</div>` : ''}<button class="alt" id="leave" style="padding:6px 12px">Leave</button></div>`;
+        ${S.phase !== 'lobby' ? `<div class="chip s">Round ${S.round}</div>` : ''}<button class="alt leave" style="padding:6px 12px">Leave</button></div>`;
   if (deadlineAt && (S.pending || S.turnId)) h += '<div class="timer" id="timer"><i></i></div>';
 
   if (S.phase === 'lobby') {
@@ -187,14 +187,14 @@ function render() {
 
   if (S.pending && S.pending.pid === S.you) {
     h += `<div class="modal"><div class="box"><img class="card" src="/cards/${cardImg(S.pending.card)}.png" alt="">
-      <p><b>${cardName(S.pending.card)}</b> — pick a player</p><div class="targets">${S.pending.options.map((id) => `<button class="tgt" data-id="${id}">${esc(byId(id).name)}${id === S.you ? ' (you)' : ''} · ${byId(id).score} pts</button>`).join('')}</div></div></div>`;
+      <p><b>${cardName(S.pending.card)}</b> — pick a player</p><div class="targets">${S.pending.options.map((id) => `<button class="tgt" data-id="${id}">${esc(byId(id).name)}${id === S.you ? ' (you)' : ''} · ${byId(id).score} pts</button>`).join('')}</div></div><button class="alt leave" style="width:100%;margin-top:12px">Leave</button></div></div>`;
   }
   if (S.phase === 'roundEnd' || S.phase === 'over') {
     const sorted = S.players.slice().sort((a, b) => b.total - a.total);
     h += `<div class="modal"><div class="box">${S.phase === 'over' ? `<div class="win">🏆 ${esc(byId(S.winner).name)} wins!</div>` : '<b>Round results</b>'}
       <table>${S.lastRound.map((r) => `<tr><td>${esc(r.name)}${r.flip7 ? ' ⭐' : ''}</td><td>${r.busted ? '<span style="color:var(--bad)">Bust</span>' : '+' + r.pts}</td></tr>`).join('')}</table>
       <b>Totals</b><table>${sorted.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.total}</td></tr>`).join('')}</table>
-      ${host ? `<button id="${S.phase === 'over' ? 'again' : 'next'}" style="width:100%">${S.phase === 'over' ? 'Play again' : 'Next round'}</button>` : '<p class="mut">Waiting for the host…</p>'}</div></div>`;
+      ${host ? `<button id="${S.phase === 'over' ? 'again' : 'next'}" style="width:100%">${S.phase === 'over' ? 'Play again' : 'Next round'}</button>` : '<p class="mut">Waiting for the host…</p>'}<button class="alt leave" style="width:100%;margin-top:10px">Leave</button></div></div>`;
   }
   if (err) h += `<div class="err" style="text-align:center">${esc(err)}</div>`;
   if (!online) h += '<div class="conn">Reconnecting…</div>';
@@ -221,6 +221,18 @@ function invite() {
   if (navigator.share && /Mobi/.test(navigator.userAgent)) navigator.share({ title: 'Flip 7', text: 'Join my Flip 7 game!', url }).catch(() => {});
   else if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => {});
 }
+let leaveArmed = 0;
+function leaveClick() {
+  // Two taps (no confirm(): it is blocked in some mobile webviews).
+  if (Date.now() - leaveArmed > 3000) {
+    leaveArmed = Date.now();
+    document.querySelectorAll('.leave').forEach((b) => { b.textContent = 'Tap again to leave'; });
+    setTimeout(() => document.querySelectorAll('.leave').forEach((b) => { b.textContent = 'Leave'; }), 3000);
+    return;
+  }
+  send({ type: 'leave' });
+  joined = null; S = null; localStorage.removeItem('flip7'); history.replaceState(null, '', '/'); render();
+}
 function bindGame() {
   const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
   on('start', () => send({ type: 'start' }));
@@ -229,7 +241,7 @@ function bindGame() {
   on('next', () => send({ type: 'next' }));
   on('again', () => send({ type: 'again' }));
   on('share', invite); on('share2', invite);
-  on('leave', () => { if (!confirm('Leave this game?')) return; send({ type: 'leave' }); joined = null; S = null; localStorage.removeItem('flip7'); history.replaceState(null, '', '/'); render(); });
+  document.querySelectorAll('.leave').forEach((b) => { b.onclick = leaveClick; });
   document.querySelectorAll('.tgt').forEach((b) => { b.onclick = () => send({ type: 'target', id: b.dataset.id }); });
   document.querySelectorAll('[data-e]').forEach((b) => { b.onclick = () => send({ type: 'react', e: b.dataset.e }); });
 }
