@@ -155,7 +155,7 @@ wss.on('connection', (ws) => {
       case 'react':
         if (REACTIONS.includes(m.e)) for (const sock of room.sockets.values()) send(sock, { type: 'react', from: pid, e: m.e });
         return;
-      case 'leave': return leave(ws);
+      case 'leave': return leave(ws, false);
       default: return;
     }
     settle(room);
@@ -170,15 +170,19 @@ function leave(ws, soft) {
   const { room, pid } = ctx;
   const g = room.game;
   if (room.sockets.get(pid) === ws) room.sockets.delete(pid);
-  if (g.phase === 'lobby') {
+  if (g.phase === 'lobby' && soft) {
     g.removePlayer(pid);
+    for (const [t, v] of room.tokens) if (v === pid) room.tokens.delete(t);
+  } else if (!soft) {
+    g.leavePlayer(pid);
     for (const [t, v] of room.tokens) if (v === pid) room.tokens.delete(t);
   } else {
     const p = g.byId(pid);
     if (p) p.connected = false;
   }
+  if (g.phase !== 'lobby' && g.players.filter((p) => !p.left).length < 2) g.toLobby();
   if (room.hostId === pid) {
-    const next = g.players.find((p) => p.connected);
+    const next = g.players.find((p) => p.connected && !p.left);
     room.hostId = next ? next.id : null;
   }
   if (!g.players.some((p) => p.connected)) room.emptySince = Date.now();

@@ -80,7 +80,37 @@ class Game {
     this.startRound();
   }
 
+  // Explicit leave: lobby players vanish; mid-game they are auto-played until the round ends, then dropped.
+  leavePlayer(id) {
+    const p = this.byId(id);
+    if (!p) return;
+    if (this.phase === 'lobby') { this.removePlayer(id); return; }
+    p.left = true;
+    p.connected = false;
+    this.say(`${p.name} left the game.`);
+  }
+
+  dropLeavers() {
+    let d = this.dealer;
+    for (let i = 0; i < this.dealer; i++) if (this.players[i] && this.players[i].left) d--;
+    this.players = this.players.filter((p) => !p.left);
+    const n = this.players.length || 1;
+    this.dealer = ((d % n) + n) % n;
+  }
+
+  // Too few players left: back to the waiting room.
+  toLobby() {
+    this.dropLeavers();
+    this.phase = 'lobby';
+    this.round = 0;
+    this.queue = []; this.pending = null; this.awaiting = false; this.turn = -1;
+    this.flip7By = null; this.winner = null; this.lastRound = null;
+    for (const p of this.players) { p.total = 0; p.numbers = []; p.mods = []; p.second = false; p.status = 'active'; p.held = []; p.bustCard = null; }
+    this.say('Not enough players — back to the lobby.');
+  }
+
   startRound() {
+    this.dropLeavers();
     this.dealer = (this.dealer + 1) % this.players.length;
     this.round++;
     for (const p of this.players) {
