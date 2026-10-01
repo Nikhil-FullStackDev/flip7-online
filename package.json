@@ -1,0 +1,13 @@
+{
+  "name": "flip7-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multiplayer Flip 7 card game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
