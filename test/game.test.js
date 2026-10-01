@@ -108,3 +108,14 @@ test('random bot games always finish', () => {
     assert.strictEqual(g.phase, 'over', 'game ended');
   }
 });
+
+test('forceAct stays the stalling player and resolves pending choices', () => {
+  const g = withDeck(2, [N(3), N(4), A('freeze')]);
+  g.hit('p0');
+  assert.ok(g.pending);
+  assert.ok(g.forceAct());
+  assert.strictEqual(g.pending, null);
+  assert.strictEqual(g.byId('p1').status, 'frozen');
+  assert.ok(g.forceAct()); // p0's turn -> stay
+  assert.strictEqual(g.byId('p0').status, 'stayed');
+});
