@@ -1,0 +1,9 @@
+{
+  "name": "Flip 7 Online",
+  "short_name": "Flip 7",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e3b2e",
+  "theme_color": "#0e3b2e",
+  "icons": [{ "src": "/cards/back.png", "sizes": "181x253", "type": "image/png" }]
+}

@@ -2,146 +2,259 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e3b2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/cards/n7.png">
+<link rel="apple-touch-icon" href="/cards/back.png">
 <title>Flip 7 Online</title>
 <style>
-  :root { --bg:#14202b; --panel:#1d2d3b; --ink:#f2f5f7; --mut:#8fa3b3; --acc:#ffc233; --bad:#ff5a5f; --ok:#3ecf8e; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,sans-serif; }
-  main { max-width:960px; margin:0 auto; padding:16px; }
-  h1 { margin:8px 0 16px; color:var(--acc); letter-spacing:1px; }
-  .panel { background:var(--panel); border-radius:12px; padding:16px; margin-bottom:12px; }
-  input, button { font:inherit; border-radius:8px; border:0; padding:10px 14px; }
-  input { background:#0f1923; color:var(--ink); border:1px solid #33475a; }
-  button { background:var(--acc); color:#222; font-weight:700; cursor:pointer; }
-  button.alt { background:#33475a; color:var(--ink); }
-  button:disabled { opacity:.4; cursor:default; }
+  :root { --felt:#0e3b2e; --felt2:#0a2a21; --panel:rgba(0,0,0,.28); --ink:#fdf8e6; --mut:#a9c4b8; --acc:#ffd23f; --bad:#ff5a5f; --ok:#3ecf8e; --ice:#7cc8ff; --cw:60px; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; min-height:100%; }
+  body { background:radial-gradient(ellipse at 50% 0%, #17604a 0%, var(--felt) 45%, var(--felt2) 100%) fixed; color:var(--ink); font:16px/1.35 system-ui,-apple-system,sans-serif; overscroll-behavior:none; }
+  #app { max-width:1000px; margin:0 auto; padding:10px 10px calc(96px + env(safe-area-inset-bottom)); }
+  button, input { font:inherit; border:0; border-radius:12px; padding:12px 16px; }
+  input { background:rgba(0,0,0,.35); color:var(--ink); border:1px solid rgba(255,255,255,.2); width:100%; }
+  button { background:var(--acc); color:#2a2100; font-weight:800; cursor:pointer; touch-action:manipulation; }
+  button:active { transform:scale(.97); }
+  button.alt { background:rgba(255,255,255,.14); color:var(--ink); }
+  button:disabled { opacity:.4; }
+  .logo { display:block; margin:18px auto 10px; width:min(260px,70vw); }
+  .panel { background:var(--panel); border-radius:16px; padding:14px; margin-bottom:10px; backdrop-filter:blur(4px); }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .err { color:var(--bad); min-height:1.4em; }
-  .code { font-size:2rem; letter-spacing:.3rem; color:var(--acc); font-weight:800; }
-  .players { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; }
-  .pl { background:var(--panel); border-radius:12px; padding:12px; border:2px solid transparent; }
-  .pl.turn { border-color:var(--acc); }
-  .pl.you .nm::after { content:" (you)"; color:var(--mut); font-weight:400; }
-  .pl.out { opacity:.75; }
-  .nm { font-weight:700; display:flex; justify-content:space-between; gap:8px; }
-  .st { font-size:.8rem; padding:2px 8px; border-radius:99px; background:#33475a; }
-  .st.busted { background:var(--bad); } .st.frozen { background:#5bb8ff; color:#012; } .st.stayed { background:var(--ok); color:#012; }
-  .cards { display:flex; flex-wrap:wrap; gap:4px; min-height:46px; margin:8px 0; }
-  .c { min-width:34px; height:46px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:800; background:#f5efe0; color:#222; padding:0 4px; font-size:.95rem; }
-  .c.m { background:#b388ff; } .c.a { background:#ff9f43; font-size:.7rem; text-align:center; line-height:1; }
-  .c.bust { background:var(--bad); color:#fff; }
-  .meta { color:var(--mut); font-size:.85rem; display:flex; justify-content:space-between; }
-  #log { max-height:180px; overflow:auto; font-size:.85rem; color:var(--mut); }
-  .banner { font-weight:700; margin-bottom:8px; }
-  table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding:4px 8px; }
+  .grow { flex:1; min-width:0; }
+  .err { color:var(--bad); min-height:1.3em; font-size:.9rem; }
+  .mut { color:var(--mut); font-size:.85rem; }
+  .home { max-width:420px; margin:0 auto; }
+  .home .row { margin-top:10px; flex-wrap:nowrap; }
+
+  .top { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .chip { background:var(--panel); border-radius:99px; padding:6px 12px; font-weight:800; letter-spacing:.15rem; color:var(--acc); cursor:pointer; user-select:none; }
+  .chip.s { letter-spacing:0; color:var(--ink); font-weight:600; font-size:.85rem; }
+  .spacer { flex:1; }
+  .timer { height:5px; border-radius:3px; background:rgba(255,255,255,.12); overflow:hidden; margin-bottom:8px; }
+  .timer i { display:block; height:100%; background:var(--acc); transform-origin:left; }
+  .timer.low i { background:var(--bad); }
+
+  .banner { text-align:center; font-weight:800; font-size:1.05rem; margin:4px 0 10px; min-height:1.4em; }
+  .banner.me { color:var(--acc); }
+  .deckrow { display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:10px; }
+  .pile { position:relative; width:46px; }
+  .pile img { width:46px; display:block; border-radius:5px; box-shadow:0 2px 0 rgba(0,0,0,.4), 2px 4px 8px rgba(0,0,0,.4); }
+  .pile b { position:absolute; inset:auto 0 -18px; text-align:center; font-size:.75rem; color:var(--mut); font-weight:600; }
+
+  .opps { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:10px; }
+  .pl { background:var(--panel); border-radius:14px; padding:8px 10px; border:2px solid transparent; transition:border-color .2s; min-width:0; }
+  .pl.turn { border-color:var(--acc); box-shadow:0 0 14px rgba(255,210,63,.35); }
+  .pl.out .tray { opacity:.7; }
+  .pl.me { padding:10px 12px; }
+  .nm { display:flex; justify-content:space-between; align-items:center; gap:6px; font-weight:700; font-size:.92rem; }
+  .nm span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .st { font-size:.7rem; padding:2px 8px; border-radius:99px; background:#33475a; text-transform:uppercase; letter-spacing:.04em; flex:none; }
+  .st.busted { background:var(--bad); } .st.frozen { background:var(--ice); color:#012; } .st.stayed { background:var(--ok); color:#012; }
+  .tray { display:flex; padding:8px 0 4px; min-height:calc(var(--cw)*1.4 + 12px); overflow:hidden; }
+  .tray img { width:var(--cw); height:auto; flex:none; border-radius:5px; box-shadow:0 2px 6px rgba(0,0,0,.5); margin-left:calc(var(--cw) * -.45); }
+  .tray img:first-child { margin-left:0; }
+  .tray img.bust { filter:grayscale(.2) drop-shadow(0 0 6px var(--bad)); outline:3px solid var(--bad); outline-offset:-3px; }
+  .tray img.pop { animation:pop .45s cubic-bezier(.2,1.4,.4,1); }
+  .tray.big { --cw:64px; }
+  .opps .tray { --cw:38px; }
+  .meta { display:flex; justify-content:space-between; font-size:.8rem; color:var(--mut); }
+  .meta b { color:var(--ink); }
+  @keyframes pop { from { transform:translateY(-40px) scale(.6) rotate(-8deg); opacity:0; } to { transform:none; opacity:1; } }
+
+  .bar { position:fixed; left:0; right:0; bottom:0; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, rgba(0,0,0,.65) 35%); z-index:5; }
+  .bar .in { max-width:600px; margin:0 auto; display:flex; gap:10px; }
+  .bar button { flex:1; font-size:1.15rem; padding:16px; border-radius:16px; }
+  .bar button.hit { background:var(--ok); color:#012; }
+
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10; display:flex; align-items:center; justify-content:center; padding:16px; overflow:auto; }
+  .modal .box { background:var(--felt2); border:1px solid rgba(255,255,255,.18); border-radius:20px; padding:18px; max-width:420px; width:100%; text-align:center; }
+  .modal img.card { width:110px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.6); animation:pop .4s; }
+  .targets { display:grid; gap:8px; margin-top:14px; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; text-align:left; }
+  td { padding:6px 4px; border-bottom:1px solid rgba(255,255,255,.1); }
+  td:last-child { text-align:right; font-weight:700; }
+  .win { font-size:1.4rem; font-weight:900; color:var(--acc); }
+
+  .reacts { display:flex; gap:6px; justify-content:center; margin:6px 0; }
+  .reacts button { background:rgba(255,255,255,.1); padding:6px 10px; font-size:1.2rem; border-radius:99px; }
+  .float { position:fixed; bottom:110px; font-size:2.2rem; z-index:20; pointer-events:none; animation:fl 2s ease-out forwards; text-align:center; }
+  .float small { display:block; font-size:.7rem; color:var(--ink); }
+  @keyframes fl { to { transform:translateY(-220px); opacity:0; } }
+  details { margin-top:6px; } summary { color:var(--mut); font-size:.85rem; cursor:pointer; }
+  #log { max-height:150px; overflow:auto; font-size:.82rem; color:var(--mut); margin-top:6px; }
+  .conn { position:fixed; top:0; left:0; right:0; background:var(--bad); text-align:center; padding:4px; font-size:.85rem; z-index:30; }
+  @media (min-width:700px) { :root { --cw:72px; } .opps .tray { --cw:46px; } .tray.big { --cw:78px; } }
 </style>
 </head>
 <body>
-<main>
-  <h1>FLIP 7</h1>
-  <div id="app"></div>
-</main>
+<div id="app"></div>
 <script>
 const $app = document.getElementById('app');
-let ws, S = null, err = '', joined = null; // joined = {code, token}
+let ws, S = null, err = '', joined = null, online = false, deadlineAt = null;
+const seen = new Set();
+let prevKey = '';
 try { joined = JSON.parse(localStorage.getItem('flip7') || 'null'); } catch {}
+const urlRoom = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
 
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => { if (joined) send({ type: 'rejoin', code: joined.code, token: joined.token }); render(); };
+  ws.onopen = () => { online = true; if (joined) send({ type: 'rejoin', code: joined.code, token: joined.token }); render(); };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.type === 'state') { S = m; err = ''; }
-    else if (m.type === 'joined') { joined = { code: m.code, token: m.token }; localStorage.setItem('flip7', JSON.stringify(joined)); }
+    if (m.type === 'state') { S = m; err = ''; deadlineAt = m.msLeft != null ? Date.now() + m.msLeft : null; }
+    else if (m.type === 'joined') { joined = { code: m.code, token: m.token }; localStorage.setItem('flip7', JSON.stringify(joined)); history.replaceState(null, '', '/?room=' + m.code); }
+    else if (m.type === 'react') { floatEmoji(m); return; }
     else if (m.type === 'error') { err = m.msg; if (m.gone) { joined = null; S = null; localStorage.removeItem('flip7'); } }
     render();
   };
-  ws.onclose = () => { setTimeout(connect, 1500); };
+  ws.onclose = () => { online = false; render(); setTimeout(connect, 1200); };
 }
 const send = (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const cardTxt = (c) => c.k === 'n' ? c.v : c.k === 'm' ? '+' + c.v : c.k === 'x' ? 'x2' : { freeze: 'Freeze', flip3: 'Flip 3', second: '2nd Chance' }[c.a];
+// Reconnect promptly when a phone wakes up / tab returns.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && (!ws || ws.readyState > 1)) connect(); });
 
-function cardsHtml(p) {
-  let h = [...p.numbers].sort((a, b) => a - b).map((n) => `<div class="c">${n}</div>`).join('');
-  h += p.mods.map((c) => `<div class="c m">${cardTxt(c)}</div>`).join('');
-  if (p.second) h += '<div class="c a">2nd Chance</div>';
-  if (p.bustCard) h += `<div class="c bust">${p.bustCard.v}</div>`;
-  return h;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cardImg = (c) => c.k === 'n' ? `n${c.v}` : c.k === 'm' ? `m${c.v}` : c.k === 'x' ? 'x2' : c.a;
+const cardName = (c) => c.k === 'n' ? c.v : c.k === 'm' ? '+' + c.v : c.k === 'x' ? 'x2' : { freeze: 'Freeze', flip3: 'Flip Three', second: 'Second Chance' }[c.a];
+
+function trayHtml(p, big) {
+  const items = [];
+  [...p.numbers].sort((a, b) => a - b).forEach((n) => items.push({ img: 'n' + n }));
+  p.mods.forEach((c) => items.push({ img: cardImg(c) }));
+  if (p.second) items.push({ img: 'second' });
+  if (p.bustCard) items.push({ img: 'n' + p.bustCard.v, bust: 1 });
+  return `<div class="tray ${big ? 'big' : ''}">` + items.map((it) => {
+    const key = `${S.round}:${p.id}:${it.img}${it.bust ? 'b' : ''}`;
+    const isNew = !seen.has(key);
+    seen.add(key);
+    return `<img src="/cards/${it.img}.png" alt="" class="${it.bust ? 'bust ' : ''}${isNew && prevKey ? 'pop' : ''}" draggable="false">`;
+  }).join('') + '</div>';
 }
 
-function lobby() {
-  if (S) return '';
-  return `<div class="panel">
-    <div class="row"><input id="name" placeholder="Your name" maxlength="16" value="${esc(localStorage.getItem('flip7name') || '')}"></div>
-    <div class="row" style="margin-top:10px"><button id="create">Create room</button></div>
-    <div class="row" style="margin-top:10px"><input id="code" placeholder="Room code" maxlength="4" style="width:130px;text-transform:uppercase"><button class="alt" id="join">Join room</button></div>
+function homeHtml() {
+  const code = urlRoom;
+  return `<img class="logo" src="/cards/back.png" alt="Flip 7" style="width:120px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+  <div class="home"><div class="panel">
+    <input id="name" placeholder="Your name" maxlength="16" autocomplete="nickname" value="${esc(localStorage.getItem('flip7name') || '')}">
+    ${code ? `<div class="row"><button class="grow" id="join" data-code="${code}">Join room ${code}</button></div>
+             <div class="row"><button class="alt grow" id="create">Or create a new room</button></div>`
+           : `<div class="row"><button class="grow" id="create">Create room</button></div>
+             <div class="row"><input id="code" placeholder="CODE" maxlength="4" autocapitalize="characters" style="width:110px;text-transform:uppercase;text-align:center;letter-spacing:.2rem"><button class="alt grow" id="join">Join</button></div>`}
     <div class="err">${esc(err)}</div>
-    <p class="meta">Get to ${200} points. Hit to draw, stay to bank. A duplicate number busts you. Seven different numbers = Flip 7 (+15)!</p>
-  </div>`;
+    <p class="mut">First to <b>200</b>. Hit to draw, stay to bank points. A duplicate number busts you. Seven different numbers is a <b>Flip 7</b> (+15)!</p>
+  </div></div>`;
 }
 
 function render() {
-  if (!S) { $app.innerHTML = lobby(); bindLobby(); return; }
+  const wasTyping = document.activeElement && document.activeElement.tagName === 'INPUT';
+  if (!S) { $app.innerHTML = homeHtml() + (online ? '' : '<div class="conn">Connecting…</div>'); bindHome(); return; }
+  if (wasTyping && !document.getElementById('name')) { /* no inputs in game view */ }
   const me = S.players.find((p) => p.id === S.you);
   const host = S.hostId === S.you;
   const byId = (id) => S.players.find((p) => p.id === id);
-  let top = `<div class="panel"><div class="row" style="justify-content:space-between"><div>Room <span class="code">${S.code}</span></div><div class="row"><button class="alt" id="leave">Leave</button></div></div>`;
+  const others = S.players.filter((p) => p.id !== S.you);
+  const myTurn = S.phase === 'play' && S.turnId === S.you && !S.pending;
+  let h = '';
+
+  h += `<div class="top"><div class="chip" id="share" title="Copy invite link">${S.code}</div><div class="chip s" id="share2">🔗 Invite</div><div class="spacer"></div>
+        ${S.phase !== 'lobby' ? `<div class="chip s">Round ${S.round}</div>` : ''}<button class="alt" id="leave" style="padding:6px 12px">Leave</button></div>`;
+  if (deadlineAt && (S.pending || S.turnId)) h += '<div class="timer" id="timer"><i></i></div>';
+
   if (S.phase === 'lobby') {
-    top += `<p>Share the code. ${S.players.length} player(s) joined.</p>
-      ${host ? `<button id="start" ${S.players.length < 2 ? 'disabled' : ''}>Start game</button>` : '<p class="meta">Waiting for host to start…</p>'}`;
+    h += `<div class="panel"><b>Waiting room</b> — ${S.players.length} player${S.players.length > 1 ? 's' : ''}
+      <p class="mut">Share the invite link or code ${S.code}. 2–12 players.</p>
+      ${host ? `<button id="start" style="width:100%" ${S.players.length < 2 ? 'disabled' : ''}>${S.players.length < 2 ? 'Need 2+ players' : 'Start game'}</button>` : '<p class="mut">Waiting for the host to start…</p>'}</div>`;
+    h += '<div class="opps">' + S.players.map((p) => `<div class="pl ${p.id === S.you ? 'me' : ''}"><div class="nm"><span>${esc(p.name)}${p.id === S.you ? ' (you)' : ''}</span><span>${p.id === S.hostId ? '👑' : ''}</span></div></div>`).join('') + '</div>';
   } else {
-    const t = S.turnId && byId(S.turnId);
-    let msg = '';
-    if (S.pending) {
-      const who = byId(S.pending.pid);
-      msg = S.pending.pid === S.you
-        ? `Play <b>${cardTxt(S.pending.card)}</b> — choose a player:`
-        : `${esc(who.name)} is choosing a target for ${cardTxt(S.pending.card)}…`;
-    } else if (S.phase === 'play' && t) msg = t.id === S.you ? 'Your turn!' : `${esc(t.name)}'s turn`;
+    let msg = '', cls = '';
+    if (S.pending) msg = S.pending.pid === S.you ? `Choose a target for ${cardName(S.pending.card)}` : `${esc(byId(S.pending.pid).name)} is choosing a target…`;
+    else if (S.phase === 'play' && S.turnId) { cls = S.turnId === S.you ? 'me' : ''; msg = S.turnId === S.you ? 'Your turn!' : `${esc(byId(S.turnId).name)}'s turn`; }
     else if (S.phase === 'roundEnd') msg = 'Round over';
-    else if (S.phase === 'over') msg = `🏆 ${esc(byId(S.winner).name)} wins!`;
-    top += `<div class="banner">Round ${S.round} · Deck ${S.deckCount} · First to ${S.target} · ${msg}</div>`;
-    if (S.pending && S.pending.pid === S.you) {
-      top += `<div class="row">${S.pending.options.map((id) => `<button class="tgt" data-id="${id}">${esc(byId(id).name)}${id === S.you ? ' (you)' : ''}</button>`).join('')}</div>`;
-    } else if (S.phase === 'play' && S.turnId === S.you) {
-      top += `<div class="row"><button id="hit">Hit</button><button class="alt" id="stay">Stay (${me.score})</button></div>`;
-    }
-    if (S.phase === 'roundEnd' || S.phase === 'over') {
-      top += '<table>' + S.lastRound.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.busted ? 'Bust' : '+' + r.pts}${r.flip7 ? ' ⭐ Flip 7' : ''}</td></tr>`).join('') + '</table>';
-      if (host) top += `<div class="row" style="margin-top:8px"><button id="${S.phase === 'over' ? 'again' : 'next'}">${S.phase === 'over' ? 'Play again' : 'Next round'}</button></div>`;
-      else top += '<p class="meta">Waiting for host…</p>';
-    }
+    else if (S.phase === 'over') msg = 'Game over';
+    h += `<div class="banner ${cls}">${msg}</div>`;
+    h += `<div class="deckrow"><div class="pile"><img src="/cards/back.png" alt=""><b>${S.deckCount}</b></div><div class="mut">First to ${S.target}</div></div>`;
+    h += '<div class="opps">' + others.map((p) => plHtml(p, false)).join('') + '</div>';
+    h += plHtml(me, true);
+    h += `<div class="reacts">${['😂', '😮', '😭', '👏', '🔥', '😈'].map((e) => `<button data-e="${e}">${e}</button>`).join('')}</div>`;
+    h += `<details><summary>Game log</summary><div id="log">${S.log.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join('')}</div></details>`;
   }
-  top += `<div class="err">${esc(err)}</div></div>`;
 
-  const pls = S.players.map((p) => {
-    const out = p.status !== 'active' && S.phase !== 'lobby';
-    return `<div class="pl ${p.id === S.you ? 'you' : ''} ${p.id === S.turnId ? 'turn' : ''} ${out ? 'out' : ''}">
-      <div class="nm"><span>${esc(p.name)}${p.connected ? '' : ' 💤'}${p.id === S.hostId ? ' 👑' : ''}</span>${S.phase !== 'lobby' && p.status !== 'active' ? `<span class="st ${p.status}">${p.status}</span>` : ''}</div>
-      <div class="cards">${cardsHtml(p)}</div>
-      <div class="meta"><span>Round: ${p.score}${p.flip7 ? ' ⭐' : ''}</span><span>Total: <b>${p.total}</b></span></div>
-    </div>`;
-  }).join('');
+  if (myTurn) h += `<div class="bar"><div class="in"><button class="hit" id="hit">Hit</button><button class="alt" id="stay">Stay · ${me.score}</button></div></div>`;
 
-  $app.innerHTML = top + (S.phase === 'lobby' ? `<div class="players">${pls}</div>` : `<div class="players">${pls}</div><div class="panel" style="margin-top:12px"><div id="log">${S.log.slice().reverse().map((l) => `<div>${esc(l)}</div>`).join('')}</div></div>`);
-  const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
+  if (S.pending && S.pending.pid === S.you) {
+    h += `<div class="modal"><div class="box"><img class="card" src="/cards/${cardImg(S.pending.card)}.png" alt="">
+      <p><b>${cardName(S.pending.card)}</b> — pick a player</p><div class="targets">${S.pending.options.map((id) => `<button class="tgt" data-id="${id}">${esc(byId(id).name)}${id === S.you ? ' (you)' : ''} · ${byId(id).score} pts</button>`).join('')}</div></div></div>`;
+  }
+  if (S.phase === 'roundEnd' || S.phase === 'over') {
+    const sorted = S.players.slice().sort((a, b) => b.total - a.total);
+    h += `<div class="modal"><div class="box">${S.phase === 'over' ? `<div class="win">🏆 ${esc(byId(S.winner).name)} wins!</div>` : '<b>Round results</b>'}
+      <table>${S.lastRound.map((r) => `<tr><td>${esc(r.name)}${r.flip7 ? ' ⭐' : ''}</td><td>${r.busted ? '<span style="color:var(--bad)">Bust</span>' : '+' + r.pts}</td></tr>`).join('')}</table>
+      <b>Totals</b><table>${sorted.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.total}</td></tr>`).join('')}</table>
+      ${host ? `<button id="${S.phase === 'over' ? 'again' : 'next'}" style="width:100%">${S.phase === 'over' ? 'Play again' : 'Next round'}</button>` : '<p class="mut">Waiting for the host…</p>'}</div></div>`;
+  }
+  if (err) h += `<div class="err" style="text-align:center">${esc(err)}</div>`;
+  if (!online) h += '<div class="conn">Reconnecting…</div>';
+
+  const scroll = document.scrollingElement.scrollTop;
+  $app.innerHTML = h;
+  document.scrollingElement.scrollTop = scroll;
+  prevKey = S.round + ':' + S.phase;
+  bindGame();
+}
+
+function plHtml(p, isMe) {
+  const out = p.status !== 'active';
+  return `<div class="pl ${isMe ? 'me' : ''} ${p.id === S.turnId ? 'turn' : ''} ${out ? 'out' : ''}">
+    <div class="nm"><span>${esc(p.name)}${isMe ? ' (you)' : ''}${p.connected ? '' : ' 💤'}${p.id === S.hostId ? ' 👑' : ''}</span>${out ? `<span class="st ${p.status}">${p.status}</span>` : ''}</div>
+    ${trayHtml(p, isMe)}
+    <div class="meta"><span>Round <b>${p.score}</b>${p.flip7 ? ' ⭐' : ''}</span><span>Total <b>${p.total}</b></span></div></div>`;
+}
+
+const $ = (id) => document.getElementById(id);
+function invite() {
+  const url = location.origin + '/?room=' + S.code;
+  const done = () => { err = ''; const c = $('share2'); if (c) { c.textContent = '✔ Copied'; setTimeout(() => { if ($('share2')) $('share2').textContent = '🔗 Invite'; }, 1500); } };
+  if (navigator.share && /Mobi/.test(navigator.userAgent)) navigator.share({ title: 'Flip 7', text: 'Join my Flip 7 game!', url }).catch(() => {});
+  else if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => {});
+}
+function bindGame() {
+  const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
   on('start', () => send({ type: 'start' }));
   on('hit', () => send({ type: 'hit' }));
   on('stay', () => send({ type: 'stay' }));
   on('next', () => send({ type: 'next' }));
   on('again', () => send({ type: 'again' }));
-  on('leave', () => { send({ type: 'leave' }); joined = null; S = null; localStorage.removeItem('flip7'); render(); });
+  on('share', invite); on('share2', invite);
+  on('leave', () => { if (!confirm('Leave this game?')) return; send({ type: 'leave' }); joined = null; S = null; localStorage.removeItem('flip7'); history.replaceState(null, '', '/'); render(); });
   document.querySelectorAll('.tgt').forEach((b) => { b.onclick = () => send({ type: 'target', id: b.dataset.id }); });
+  document.querySelectorAll('[data-e]').forEach((b) => { b.onclick = () => send({ type: 'react', e: b.dataset.e }); });
 }
-
-function bindLobby() {
-  const name = () => { const n = document.getElementById('name').value; localStorage.setItem('flip7name', n); return n; };
-  const c = document.getElementById('create'), j = document.getElementById('join');
-  if (c) c.onclick = () => send({ type: 'create', name: name() });
-  if (j) j.onclick = () => send({ type: 'join', code: document.getElementById('code').value, name: name() });
+function bindHome() {
+  const name = () => { const n = $('name').value; localStorage.setItem('flip7name', n); return n; };
+  if ($('create')) $('create').onclick = () => send({ type: 'create', name: name() });
+  if ($('join')) $('join').onclick = () => send({ type: 'join', code: $('join').dataset.code || $('code').value, name: name() });
 }
+function floatEmoji(m) {
+  const p = S && S.players.find((x) => x.id === m.from);
+  const el = document.createElement('div');
+  el.className = 'float';
+  el.style.left = (10 + Math.random() * 70) + 'vw';
+  el.innerHTML = `${m.e}<small>${p ? esc(p.name) : ''}</small>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+// Turn countdown bar (updates in place, no re-render).
+setInterval(() => {
+  const t = $('timer');
+  if (!t || !deadlineAt) return;
+  const left = Math.max(0, deadlineAt - Date.now());
+  t.firstElementChild.style.transform = `scaleX(${left / 45000})`;
+  t.classList.toggle('low', left < 10000);
+}, 200);
 
 connect();
 render();
