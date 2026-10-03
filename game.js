@@ -60,7 +60,7 @@ class Game {
 
   addPlayer(id, name) {
     this.players.push({
-      id, name, connected: true, total: 0,
+      id, name, connected: true, dcAt: 0, total: 0,
       numbers: [], mods: [], second: false, status: 'active', held: [], bustCard: null,
     });
   }
@@ -70,6 +70,7 @@ class Game {
   }
 
   start() {
+    if (this.players.length < 2) return false;
     this.players.forEach((p) => { p.total = 0; });
     this.deck = shuffle(buildDeck(), this.rng);
     this.discard = [];
@@ -78,6 +79,7 @@ class Game {
     this.winner = null;
     this.lastRound = null;
     this.startRound();
+    return true;
   }
 
   // Explicit leave: lobby players vanish; mid-game they are auto-played until the round ends, then dropped.
@@ -90,9 +92,11 @@ class Game {
     this.say(`${p.name} left the game.`);
   }
 
+  // Remove players who left. The dealer index is shifted so that the seat after
+  // the old dealer deals next, even when the dealer themself left.
   dropLeavers() {
     let d = this.dealer;
-    for (let i = 0; i < this.dealer; i++) if (this.players[i] && this.players[i].left) d--;
+    for (let i = 0; i <= this.dealer; i++) if (this.players[i] && this.players[i].left) d--;
     this.players = this.players.filter((p) => !p.left);
     const n = this.players.length || 1;
     this.dealer = ((d % n) + n) % n;
@@ -154,6 +158,8 @@ class Game {
         if (this.dealIdx < this.players.length) {
           const p = this.players[(this.dealer + 1 + this.dealIdx) % this.players.length];
           this.dealIdx++;
+          // A player frozen or busted by an earlier deal-time action gets no card.
+          if (p.status !== 'active') continue;
           const c = this.draw();
           if (c) this.receive(p, c, false);
           continue;
@@ -180,13 +186,16 @@ class Game {
   }
 
   receive(p, card, inF3) {
+    // Defence in depth: a player who is out of the round never collects cards.
+    if (p.status !== 'active') { this.discard.push(card); return; }
     this.say(`${p.name} draws ${cardName(card)}.`);
     if (card.k === 'n') {
       if (p.numbers.includes(card.v)) {
         if (p.second) {
           p.second = false;
-          p.held = p.held.filter((h) => !(h.k === 'a' && h.a === 'second'));
-          this.discard.push(card, { k: 'a', a: 'second' });
+          const i = p.held.findIndex((h) => h.k === 'a' && h.a === 'second');
+          const sc = i >= 0 ? p.held.splice(i, 1)[0] : { k: 'a', a: 'second' };
+          this.discard.push(card, sc);
           this.say(`${p.name} uses Second Chance — duplicate ${card.v} discarded.`);
         } else {
           p.status = 'busted';
@@ -248,7 +257,7 @@ class Game {
         return;
       }
       const c = this.draw();
-      if (!c) return;
+      if (!c) { for (const d of t.deferred) this.discard.push(d.card); return; }
       this.curF3 = t;
       this.receive(p, c, true);
       this.curF3 = null;
@@ -310,27 +319,38 @@ class Game {
     return true;
   }
 
-  // Resolve decisions for disconnected players. Returns true if it acted.
-  autoStep() {
+  // Who the game is waiting on (turn player or target chooser), or null.
+  actorId() {
+    if (this.pending) return this.pending.pid;
+    if (this.phase === 'play' && this.awaiting) return this.players[this.turn].id;
+    return null;
+  }
+
+  // Target picked on behalf of an absent or stalling chooser: a random other
+  // player (not always the first seat), or the only option.
+  autoTarget() {
+    const pd = this.pending;
+    const others = pd.options.filter((id) => id !== pd.pid);
+    if (!others.length) return pd.options[0];
+    return others[Math.floor(this.rng() * others.length)];
+  }
+
+  // Resolve decisions for absent players. `isAbsent(player)` decides who is
+  // absent (the server adds a reconnect grace period). Returns true if it acted.
+  autoStep(isAbsent = (p) => !p.connected) {
     if (this.pending) {
       const pl = this.byId(this.pending.pid);
-      if (pl && !pl.connected) {
-        const o = this.pending.options.find((id) => id !== pl.id) || this.pending.options[0];
-        return this.choose(pl.id, o);
-      }
+      if (pl && isAbsent(pl)) return this.choose(pl.id, this.autoTarget());
     } else if (this.phase === 'play' && this.awaiting) {
       const pl = this.players[this.turn];
-      if (!pl.connected) return this.stay(pl.id);
+      if (isAbsent(pl)) return this.stay(pl.id);
     }
     return false;
   }
 
   // Turn timer expiry: act for the player who is stalling.
   forceAct() {
-    if (this.pending) {
-      const o = this.pending.options.find((id) => id !== this.pending.pid) || this.pending.options[0];
-      return this.choose(this.pending.pid, o);
-    }
+    if (this.pending) return this.choose(this.pending.pid, this.autoTarget());
     if (this.phase === 'play' && this.awaiting) return this.stay(this.players[this.turn].id);
     return false;
   }
@@ -354,6 +374,14 @@ class Game {
       this.discard.push(...p.held);
       if (p.bustCard) this.discard.push(p.bustCard);
     }
+    // Cards still waiting in the effect queue (deferred Freeze / Flip Three,
+    // unresolved choices) go to the discard instead of vanishing.
+    for (const q of this.queue) {
+      if (q.card) this.discard.push(q.card);
+      if (q.deferred) for (const d of q.deferred) this.discard.push(d.card);
+    }
+    this.queue = [];
+    if (this.pending) this.discard.push(this.pending.card);
     this.lastRound = results;
     this.pending = null;
     this.awaiting = false;
@@ -369,12 +397,16 @@ class Game {
     }
   }
 
+  // Public table state. Every card in Flip 7 is face up, so the view is the
+  // same for every player; the server serialises it once per broadcast and
+  // adds `you` per socket. Passing forId adds it here (used by tests).
   view(forId) {
     const cur = this.phase === 'play' && this.awaiting ? this.players[this.turn] : null;
-    return {
+    const ended = this.phase === 'roundEnd' || this.phase === 'over';
+    const v = {
       phase: this.phase,
       round: this.round,
-      you: forId,
+      seq: this.seq,
       turnId: cur ? cur.id : null,
       dealerId: this.players[this.dealer] ? this.players[this.dealer].id : null,
       pending: this.pending
@@ -383,15 +415,17 @@ class Game {
       deckCount: this.deck.length,
       target: TARGET_SCORE,
       winner: this.winner,
-      lastRound: this.lastRound,
-      log: this.log.slice(-25),
+      lastRound: ended ? this.lastRound : null,
+      log: this.log.slice(-12),
       players: this.players.map((p) => ({
-        id: p.id, name: p.name, connected: p.connected, total: p.total,
+        id: p.id, name: p.name, connected: p.connected, left: !!p.left, total: p.total,
         numbers: p.numbers, mods: p.mods, second: p.second, status: p.status,
         bustCard: p.bustCard, score: this.phase === 'lobby' ? 0 : this.roundScore(p),
         flip7: p.id === this.flip7By,
       })),
     };
+    if (forId !== undefined) v.you = forId;
+    return v;
   }
 }
 
