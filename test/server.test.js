@@ -566,3 +566,147 @@ test('new players cannot join a game in progress', async () => {
     assert.strictEqual((await e).msg, 'Game already in progress.');
   } finally { await stop(app); }
 });
+
+// ---------- bots ----------
+test('bot brain: bot-only games always finish with legal moves only', () => {
+  const { Game } = require('../game');
+  const brain = require('../bot');
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = new Game(mulberry32(seed));
+    for (let i = 0; i < 2 + (seed % 5); i++) g.addPlayer('p' + i, 'B' + i, true);
+    assert.ok(g.start());
+    let guard = 0;
+    while (g.phase !== 'over' && guard++ < 20000) {
+      if (g.phase === 'roundEnd') { g.nextRound(); continue; }
+      const id = g.actorId();
+      assert.ok(id, `someone must be waiting (seed ${seed}, phase ${g.phase})`);
+      const d = brain.decide(g, g.byId(id));
+      assert.ok(d, 'the bot has a decision for the player the game waits on');
+      const ok = d.type === 'hit' ? g.hit(id) : d.type === 'stay' ? g.stay(id) : g.choose(id, d.id);
+      assert.ok(ok, `illegal bot move ${JSON.stringify(d)} (seed ${seed})`);
+    }
+    assert.strictEqual(g.phase, 'over', `game ends (seed ${seed})`);
+    assert.ok(g.winner);
+  }
+});
+
+test('bot brain: stays on a good hand, hits on an empty one, never targets itself with Freeze when others exist', () => {
+  const { Game } = require('../game');
+  const brain = require('../bot');
+  const g = new Game(mulberry32(7));
+  g.addPlayer('a', 'A', true); g.addPlayer('b', 'B', true);
+  g.start();
+  const a = g.byId('a');
+  a.numbers = [12, 11, 10, 9]; a.held = a.numbers.map((v) => ({ k: 'n', v }));
+  g.deck = [{ k: 'n', v: 12 }, { k: 'n', v: 11 }, { k: 'n', v: 3 }, { k: 'n', v: 10 }]; // 3 of 4 cards would bust
+  assert.strictEqual(brain.hitOrStay(g, a), 'stay');
+  a.numbers = []; a.held = [];
+  assert.strictEqual(brain.hitOrStay(g, a), 'hit');
+  g.pending = { pid: 'a', card: { k: 'a', a: 'freeze' }, options: ['a', 'b'] };
+  assert.strictEqual(brain.pickTarget(g, a), 'b');
+  g.pending = { pid: 'a', card: { k: 'a', a: 'second' }, options: ['b'] };
+  assert.strictEqual(brain.pickTarget(g, a), 'b');
+});
+
+test('host adds and removes bots in the lobby; bots count toward the 2-player minimum', async () => {
+  const app = await start({ botMinMs: 5, botMaxMs: 10 });
+  try {
+    const host = await seat(app, 'Host');
+    const code = host.joined.code;
+    let st = host.next((m) => m.type === 'state' && m.players.length === 2);
+    host.send({ type: 'addbot' });
+    const s = await st;
+    const bot = s.players.find((p) => p.bot);
+    assert.ok(bot && /\(bot\)$/.test(bot.name) && bot.connected, 'a connected bot with a (bot) name joined');
+    // a non-host cannot add bots
+    const guest = await seat(app, 'Guest', code);
+    const before = app.rooms.get(code).game.players.length;
+    guest.send({ type: 'addbot' });
+    await sleep(60);
+    assert.strictEqual(app.rooms.get(code).game.players.length, before);
+    // host removes the bot
+    st = host.next((m) => m.type === 'state' && !m.players.some((p) => p.bot));
+    host.send({ type: 'kick', id: bot.id });
+    await st;
+    // host removes the guest: the guest is told
+    const gone = guest.next((m) => m.type === 'error' && m.gone);
+    host.send({ type: 'kick', id: guest.state.you });
+    const e = await gone;
+    assert.match(e.msg, /host removed you/i);
+    assert.strictEqual(app.rooms.get(code).game.players.length, 1);
+    // the host cannot kick themselves
+    host.send({ type: 'kick', id: host.state.you });
+    await sleep(40);
+    assert.strictEqual(app.rooms.get(code).game.players.length, 1);
+    host.ws.close(); guest.ws.close();
+  } finally { await stop(app); }
+});
+
+test('a human plays a whole round against bots, who act on their own', async () => {
+  const app = await start({ botMinMs: 5, botMaxMs: 15 });
+  try {
+    const host = await seat(app, 'Host');
+    const code = host.joined.code;
+    for (let i = 0; i < 2; i++) { const w = host.next((m) => m.type === 'state' && m.players.length === 2 + i); host.send({ type: 'addbot' }); await w; }
+    host.send({ type: 'start' });
+    await host.next((m) => m.type === 'state' && m.phase !== 'lobby');
+    const g = app.rooms.get(code).game;
+    const names = g.players.filter((p) => p.bot).map((p) => p.name);
+    assert.strictEqual(names.length, 2);
+    // Stay every time it is the human's turn; the bots must keep the game moving between.
+    for (let i = 0; i < 300 && g.phase !== 'roundEnd' && g.phase !== 'over'; i++) {
+      if (g.actorId() === host.state.you) {
+        if (g.pending) host.send({ type: 'target', id: g.pending.options[0], seq: g.seq });
+        else host.send({ type: 'stay', seq: g.seq });
+      }
+      await sleep(15);
+    }
+    assert.ok(g.phase === 'roundEnd' || g.phase === 'over', 'the round finished with bots playing');
+    assert.ok(g.log.some((l) => /\(bot\)/.test(l)), 'bots took turns');
+    host.ws.close();
+  } finally { await stop(app); }
+});
+
+test('bots never become host, never play with nobody at the table, and the room closes when the last human leaves', async () => {
+  const app = await start({ botMinMs: 5, botMaxMs: 10 });
+  try {
+    const host = await seat(app, 'Host');
+    const code = host.joined.code;
+    const w = host.next((m) => m.type === 'state' && m.players.length === 2);
+    host.send({ type: 'addbot' });
+    await w;
+    const room = app.rooms.get(code);
+    host.ws.terminate(); // the only human drops
+    await sleep(60);
+    assert.ok(!room.game.byId(room.hostId) || !room.game.byId(room.hostId).bot, 'host is never a bot');
+    // the human explicitly leaves: only a bot would remain, so the room is deleted
+    const back = await rejoin(app, host);
+    back.send({ type: 'leave' });
+    await sleep(80);
+    assert.ok(!app.rooms.has(code), 'room deleted when no human is left');
+    back.ws.close();
+  } finally { await stop(app); }
+});
+
+test('only the host can set a voice chat link, and it must be an http(s) URL', async () => {
+  const app = await start();
+  try {
+    const host = await seat(app, 'Host');
+    const code = host.joined.code;
+    const guest = await seat(app, 'Guest', code);
+    let st = guest.next((m) => m.type === 'state' && m.voice === 'https://meet.example.com/abc');
+    host.send({ type: 'voice', url: ' https://meet.example.com/abc ' });
+    await st; // everyone is told, trimmed
+    guest.send({ type: 'voice', url: 'https://evil.example.com' });
+    await sleep(50);
+    assert.strictEqual(app.rooms.get(code).voice, 'https://meet.example.com/abc', 'a guest cannot change it');
+    const bad = host.next((m) => m.type === 'error' && /http/.test(m.msg));
+    host.send({ type: 'voice', url: 'javascript:alert(1)' });
+    await bad;
+    assert.strictEqual(app.rooms.get(code).voice, 'https://meet.example.com/abc', 'a bad link is rejected and the old one stays');
+    st = guest.next((m) => m.type === 'state' && m.voice === '');
+    host.send({ type: 'voice', url: '' });
+    await st; // clearing works
+    host.ws.close(); guest.ws.close();
+  } finally { await stop(app); }
+});
