@@ -7,6 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Game } = require('./game');
+const botBrain = require('./bot');
 
 const DEFAULTS = {
   publicDir: path.join(__dirname, 'public'),
@@ -23,10 +24,13 @@ const DEFAULTS = {
   msgBurst: 20, // per-socket token bucket
   msgPerSec: 10,
   reactGapMs: 700, // min gap between reactions from one socket
+  botMinMs: 900, // a bot "thinks" for a random time in this range before it acts
+  botMaxMs: 1800,
   rng: null, // deck shuffle RNG (tests pass a seeded one); defaults to Math.random
 };
 
 const REACTIONS = ['😂', '😮', '😭', '👏', '🔥', '😈'];
+const BOT_NAMES = ['Robo', 'Chip', 'Byte', 'Pixel', 'Nova', 'Echo', 'Pip', 'Zed', 'Orbit', 'Bolt', 'Gizmo', 'Cog'];
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon',
@@ -149,6 +153,9 @@ function createApp(options = {}) {
   const tokenOf = (room, pid) => { for (const [t, v] of room.tokens) if (v === pid) return t; return null; };
   const absent = (p, now) => p.left || (!p.connected && now - p.dcAt >= C.graceMs);
   const live = (room) => rooms.get(room.code) === room;
+  // Bots only play while at least one person is still at the table.
+  const humansPresent = (room) => room.game.players.some((p) => !p.bot && !p.left && p.connected);
+  const botDelay = () => C.botMinMs + Math.random() * Math.max(0, C.botMaxMs - C.botMinMs);
 
   // The view is identical for every player (all cards are face up), so it is
   // serialised once per broadcast and only `you` is spliced in per socket.
@@ -160,6 +167,7 @@ function createApp(options = {}) {
     if (g.phase === 'lobby') g.players.forEach((p, i) => { if (absent(p, now)) v.players[i].away = true; });
     v.code = room.code;
     v.hostId = room.hostId;
+    v.voice = room.voice;
     v.msTotal = C.turnMs;
     const base = JSON.stringify(v);
     const left = (t) => (t ? Math.max(0, t - now) : null);
@@ -182,9 +190,9 @@ function createApp(options = {}) {
     const g = room.game;
     const h = g.byId(room.hostId);
     if (h && !h.left && (h.connected || now - h.dcAt < C.graceMs)) return;
-    const next = g.players.find((p) => !p.left && p.connected);
+    const next = g.players.find((p) => !p.bot && !p.left && p.connected);
     if (next) room.hostId = next.id;
-    else if (!h || h.left) room.hostId = (g.players.find((p) => !p.left) || {}).id || null;
+    else if (!h || h.left) room.hostId = (g.players.find((p) => !p.bot && !p.left) || {}).id || null;
   }
 
   const actorKey = (g) => { const a = g.actorId(); return a ? `${g.round}|${a}|${g.seq}` : null; };
@@ -210,6 +218,7 @@ function createApp(options = {}) {
     // never dropped: settle() enforces it once passed, so it cannot be skipped.
     const wakes = graceEnds.filter((t) => t > now);
     if (room.deadline) wakes.push(room.deadline);
+    if (room.botAt > now) wakes.push(room.botAt);
     clearTimeout(room.timer);
     room.timer = null;
     if (!wakes.length || closed) return;
@@ -232,6 +241,17 @@ function createApp(options = {}) {
     for (let guard = 0; guard < 500; guard++) {
       if (g.autoStep((p) => absent(p, now))) continue;
       const key = actorKey(g);
+      const actor = key && g.byId(g.actorId());
+      if (actor && actor.bot) {
+        if (!humansPresent(room)) { room.botAt = 0; break; } // nobody to play for
+        if (room.botKey !== key) { room.botKey = key; room.botAt = now + botDelay(); }
+        if (now < room.botAt) break; // still "thinking"
+        room.botAt = 0;
+        const d = botBrain.decide(g, actor);
+        const done = d && (d.type === 'hit' ? g.hit(actor.id) : d.type === 'stay' ? g.stay(actor.id) : g.choose(actor.id, d.id));
+        if (!done && !g.forceAct()) break; // never let a bot stall the table
+        continue;
+      }
       if (!key || key !== room.timerKey || !room.deadline || now < room.deadline) break;
       room.deadline = 0; // enforced once; armTimer() gives whoever acts next a fresh deadline
       if (!g.forceAct()) break;
@@ -250,7 +270,7 @@ function createApp(options = {}) {
   }
 
   // Hard removal (explicit leave, or a lobby seat that expired). Returns false if the room is gone.
-  function dropPlayer(room, pid, by) {
+  function dropPlayer(room, pid, by, why) {
     const g = room.game;
     g.leavePlayer(pid);
     for (const [t, v] of room.tokens) if (v === pid) room.tokens.delete(t);
@@ -258,8 +278,9 @@ function createApp(options = {}) {
     if (s) {
       s.ctx = null;
       room.sockets.delete(pid);
-      if (s !== by) err(s, 'You left this game.', { gone: true });
+      if (s !== by) err(s, why || 'You left this game.', { gone: true });
     }
+    if (!g.players.some((p) => !p.bot && !p.left)) { deleteRoom(room); return false; } // only bots would be left
     if (g.phase !== 'lobby' && g.players.filter((p) => !p.left).length < 2) g.toLobby();
     if (g.players.length === 0) { deleteRoom(room); return false; }
     return true;
@@ -342,8 +363,8 @@ function createApp(options = {}) {
     const now = Date.now();
     return {
       code: newCode(), game: new Game(C.rng || Math.random), hostId: null, tokens: new Map(), sockets: new Map(),
-      timer: null, timerKey: null, deadline: 0, graceAt: 0, nextAt: 0, lastKey: null,
-      lastPhase: 'lobby', phaseAt: now, lastActive: now, emptySince: 0,
+      timer: null, timerKey: null, deadline: 0, graceAt: 0, nextAt: 0, lastKey: null, voice: '',
+      lastPhase: 'lobby', phaseAt: now, lastActive: now, emptySince: 0, botAt: 0, botKey: null,
     };
   }
 
@@ -418,6 +439,30 @@ function createApp(options = {}) {
         if (g.players.length - ghosts.length < 2) break;
         for (const p of ghosts) dropPlayer(room, p.id);
         ok = g.start();
+        break;
+      }
+      case 'addbot': {
+        if (pid !== room.hostId || g.phase !== 'lobby' || g.players.length >= C.maxPlayers) break;
+        const taken = new Set(g.players.map((p) => p.name.toLowerCase()));
+        const base = BOT_NAMES.find((n) => !taken.has(`${n} (bot)`.toLowerCase())) || `Bot${g.players.length + 1}`;
+        g.addPlayer(crypto.randomBytes(4).toString('hex'), `${base} (bot)`, true);
+        ok = true;
+        break;
+      }
+      case 'kick': {
+        const t = g.byId(String(m.id));
+        if (pid !== room.hostId || g.phase !== 'lobby' || !t || t.id === pid) break;
+        if (t.bot) { g.removePlayer(t.id); ok = true; break; }
+        dropPlayer(room, t.id, ws, 'The host removed you from the room.');
+        ok = true;
+        break;
+      }
+      case 'voice': {
+        if (pid !== room.hostId) break;
+        const v = String(m.url == null ? '' : m.url).trim().slice(0, 300);
+        if (v && !/^https?:\/\/[^\s]+$/i.test(v)) { err(ws, 'Voice link must start with http(s)://'); break; }
+        room.voice = v;
+        ok = true;
         break;
       }
       case 'hit': ok = !stale && g.hit(pid); break;

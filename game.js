@@ -58,9 +58,9 @@ class Game {
 
   byId(id) { return this.players.find((p) => p.id === id); }
 
-  addPlayer(id, name) {
+  addPlayer(id, name, bot = false) {
     this.players.push({
-      id, name, connected: true, dcAt: 0, total: 0,
+      id, name, bot, connected: true, dcAt: 0, total: 0,
       numbers: [], mods: [], second: false, status: 'active', held: [], bustCard: null,
     });
   }
@@ -418,7 +418,7 @@ class Game {
       lastRound: ended ? this.lastRound : null,
       log: this.log.slice(-12),
       players: this.players.map((p) => ({
-        id: p.id, name: p.name, connected: p.connected, left: !!p.left, total: p.total,
+        id: p.id, name: p.name, bot: !!p.bot, connected: p.connected, left: !!p.left, total: p.total,
         numbers: p.numbers, mods: p.mods, second: p.second, status: p.status,
         bustCard: p.bustCard, score: this.phase === 'lobby' ? 0 : this.roundScore(p),
         flip7: p.id === this.flip7By,
