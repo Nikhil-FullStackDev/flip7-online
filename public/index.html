@@ -131,9 +131,6 @@
   /* ---- lobby ---- */
   .lobbyp { text-align:center; }
   .lobbyp .wide + .wide { margin-top:8px; }
-  .vlink { display:block; text-align:center; text-decoration:none; padding:12px 16px; border-radius:12px; font-weight:800; color:var(--ink); background:rgba(255,255,255,.14); margin-top:8px; }
-  .vrow { margin-top:8px; flex-wrap:nowrap; }
-  .vchip { text-decoration:none; padding:6px 10px; border-radius:99px; background:var(--panel); color:var(--ink); font-size:.85rem; font-weight:700; }
   .kick { padding:2px 10px; min-height:0; font-size:.85rem; border-radius:99px; background:rgba(255,255,255,.14); color:var(--ink); flex:none; }
   .bigcode { font-size:2.4rem; font-weight:900; letter-spacing:.4rem; color:var(--acc); margin:0 0 8px; }
 
@@ -421,7 +418,6 @@ function renderGame() {
   const armed = Date.now() - leaveArmed < 3000;
   patch('r-top', `<button class="chip" data-act="invite" aria-label="Invite friends to room ${esc(S.code)}"><b>${esc(S.code)}</b>${SHARE}</button>
     <div class="hinfo">${S.phase === 'lobby' ? '' : `<span>Round <b>${S.round}</b></span><span title="Cards left in the deck"><img src="${src('back')}" width="181" height="253" alt="Deck">${S.deckCount}</span><span class="xw">to <b>${S.target}</b></span>`}</div>
-    ${S.voice ? `<a class="vchip" href="${esc(S.voice)}" target="_blank" rel="noopener noreferrer" aria-label="Join voice chat">🎙</a>` : ''}
     <button class="ghost leave" data-act="leave">${armed ? 'Tap again to leave' : 'Leave'}</button>`);
   patch('r-status', statusHtml(by));
   patch('r-board', S.phase === 'lobby' ? lobbyHtml() : `<div class="opps">${S.players.filter((p) => p.id !== S.you).map(oppHtml).join('')}</div>`);
@@ -461,8 +457,6 @@ function lobbyHtml() {
   return `<div class="panel lobbyp"><div class="mut">Room code</div><div class="bigcode">${esc(S.code)}</div>
     <button class="alt wide" data-act="invite">${SHARE} Share invite link</button>
     ${S.hostId === S.you && S.players.length < 12 ? '<button class="alt wide" data-act="addbot">🤖 Add a bot</button>' : ''}
-    ${S.voice ? `<a class="alt wide vlink" href="${esc(S.voice)}" target="_blank" rel="noopener noreferrer">🎙 Join voice chat</a>` : ''}
-    ${S.hostId === S.you ? `<div class="row vrow"><input id="voice" class="grow" placeholder="Voice chat link (Discord / Meet…)" maxlength="300" value="${esc(S.voice || '')}"><button class="alt" data-act="setvoice">Set</button></div>` : ''}
     <p class="mut">2–12 players. Friends join with the link or the code${S.hostId === S.you ? '; bots can fill the empty seats' : ''}.</p></div>
     <div class="opps">${S.players.map((p) => `<div class="pl${p.id === S.you ? ' me' : ''}${p.connected ? '' : ' away'}"><div class="nm"><span class="n">${esc(p.name)}${p.id === S.you ? ' <small>(you)</small>' : p.away ? ' <small>offline</small>' : ''}</span>${p.id === S.hostId ? '<span title="Host">👑</span>' : ''}${p.bot ? '<span title="Bot">🤖</span>' : ''}${p.connected ? '' : `<span title="${p.away ? 'Offline: left out if the game starts now' : 'Reconnecting'}">💤</span>`}${S.hostId === S.you && p.id !== S.you ? `<button class="kick" data-act="kick" data-id="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">✕</button>` : ''}</div></div>`).join('')}</div>`;
 }
@@ -673,7 +667,6 @@ document.addEventListener('click', (e) => {
     case 'hit': case 'stay': case 'start': case 'next': case 'again': return act(a);
     case 'target': return act('target', { id: b.dataset.id });
     case 'addbot': raw({ type: 'addbot' }); return;
-    case 'setvoice': raw({ type: 'voice', url: $('voice') ? $('voice').value : '' }); return;
     case 'kick': raw({ type: 'kick', id: b.dataset.id }); return;
     case 'invite': return invite();
     case 'leave': return leaveClick();
