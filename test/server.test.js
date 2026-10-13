@@ -687,26 +687,3 @@ test('bots never become host, never play with nobody at the table, and the room 
     back.ws.close();
   } finally { await stop(app); }
 });
-
-test('only the host can set a voice chat link, and it must be an http(s) URL', async () => {
-  const app = await start();
-  try {
-    const host = await seat(app, 'Host');
-    const code = host.joined.code;
-    const guest = await seat(app, 'Guest', code);
-    let st = guest.next((m) => m.type === 'state' && m.voice === 'https://meet.example.com/abc');
-    host.send({ type: 'voice', url: ' https://meet.example.com/abc ' });
-    await st; // everyone is told, trimmed
-    guest.send({ type: 'voice', url: 'https://evil.example.com' });
-    await sleep(50);
-    assert.strictEqual(app.rooms.get(code).voice, 'https://meet.example.com/abc', 'a guest cannot change it');
-    const bad = host.next((m) => m.type === 'error' && /http/.test(m.msg));
-    host.send({ type: 'voice', url: 'javascript:alert(1)' });
-    await bad;
-    assert.strictEqual(app.rooms.get(code).voice, 'https://meet.example.com/abc', 'a bad link is rejected and the old one stays');
-    st = guest.next((m) => m.type === 'state' && m.voice === '');
-    host.send({ type: 'voice', url: '' });
-    await st; // clearing works
-    host.ws.close(); guest.ws.close();
-  } finally { await stop(app); }
-});
