@@ -167,7 +167,6 @@ function createApp(options = {}) {
     if (g.phase === 'lobby') g.players.forEach((p, i) => { if (absent(p, now)) v.players[i].away = true; });
     v.code = room.code;
     v.hostId = room.hostId;
-    v.voice = room.voice;
     v.msTotal = C.turnMs;
     const base = JSON.stringify(v);
     const left = (t) => (t ? Math.max(0, t - now) : null);
@@ -363,7 +362,7 @@ function createApp(options = {}) {
     const now = Date.now();
     return {
       code: newCode(), game: new Game(C.rng || Math.random), hostId: null, tokens: new Map(), sockets: new Map(),
-      timer: null, timerKey: null, deadline: 0, graceAt: 0, nextAt: 0, lastKey: null, voice: '',
+      timer: null, timerKey: null, deadline: 0, graceAt: 0, nextAt: 0, lastKey: null,
       lastPhase: 'lobby', phaseAt: now, lastActive: now, emptySince: 0, botAt: 0, botKey: null,
     };
   }
@@ -454,14 +453,6 @@ function createApp(options = {}) {
         if (pid !== room.hostId || g.phase !== 'lobby' || !t || t.id === pid) break;
         if (t.bot) { g.removePlayer(t.id); ok = true; break; }
         dropPlayer(room, t.id, ws, 'The host removed you from the room.');
-        ok = true;
-        break;
-      }
-      case 'voice': {
-        if (pid !== room.hostId) break;
-        const v = String(m.url == null ? '' : m.url).trim().slice(0, 300);
-        if (v && !/^https?:\/\/[^\s]+$/i.test(v)) { err(ws, 'Voice link must start with http(s)://'); break; }
-        room.voice = v;
         ok = true;
         break;
       }
