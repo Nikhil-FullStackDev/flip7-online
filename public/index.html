@@ -199,6 +199,7 @@
 <body>
 <div id="app"></div>
 <noscript><p style="text-align:center">Flip 7 needs JavaScript.</p></noscript>
+<script src="chat.js"></script>
 <script>
 'use strict';
 const V = '__ASSET_V__';
@@ -272,6 +273,8 @@ function connect() {
 function wentOffline() { online = false; offlineSince = offlineSince || Date.now(); inflight = 0; homeBusy = 0; clearTimeout(probeT); clearTimeout(connT); }
 function drop(s) { if (s !== ws) return; ws = null; try { s.close(); } catch {} wentOffline(); connect(); render(); }
 function raw(m) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(m)); return true; } return false; }
+// In-room chat with emotes (shared chat.js), carried over the game's own WebSocket.
+if (window.Chat) Chat.mount({ bottom: 112, send: (p) => Promise.resolve(raw(Object.assign({ type: 'chat' }, p)) ? { ok: true } : { ok: false, error: 'Offline: reconnecting\u2026' }) });
 // Phone woke up / network changed: reconnect, or prove the open socket is still alive.
 function wakeUp() {
   if (replaced) return;
@@ -299,6 +302,9 @@ function forgetSeat(j) { if (!raw({ type: 'leave', code: j.code, token: j.token 
 function onMessage(m) {
   switch (m.type) {
     case 'pong': return;
+    case 'chatlog': if (window.Chat) { Chat.setMe(m.you); Chat.setLog(m.log); } return;
+    case 'chat': if (window.Chat) Chat.receive(m.msg); return;
+    case 'chaterr': if (window.Chat) Chat.fail(m.msg); return;
     case 'react': return floatEmoji(m);
     case 'joined':
       if (joined && joined.code !== m.code) forgetSeat(joined); // followed an invite: release the old seat
@@ -346,6 +352,7 @@ function onState(m) {
 
 // ---------- rendering ----------
 function render() {
+  if (window.Chat) Chat.setActive(!replaced && !!S && !!S.code);
   if (replaced) return renderReplaced();
   if (!S) return renderHome();
   renderGame();
