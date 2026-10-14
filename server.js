@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Game } = require('./game');
 const botBrain = require('./bot');
+const createChat = require('./chat-server');
 
 const DEFAULTS = {
   publicDir: path.join(__dirname, 'public'),
@@ -148,6 +149,8 @@ function createApp(options = {}) {
     }
   }
 
+  // In-room chat (shared module). Flip 7 talks over WebSockets, so it only uses the validation / rate limit / history part.
+  const chat = createChat({ room: () => undefined, who: () => null });
   const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
   const err = (ws, msg, extra) => send(ws, { type: 'error', msg, ...extra });
   const tokenOf = (room, pid) => { for (const [t, v] of room.tokens) if (v === pid) return t; return null; };
@@ -307,6 +310,7 @@ function createApp(options = {}) {
     if (ws.ctx && ws.ctx.room === room && (!p || ws.ctx.pid === pid)) {
       // Already seated here on this socket (double tap, duplicate rejoin): just resend.
       send(ws, { type: 'joined', code: room.code, token: tokenOf(room, ws.ctx.pid) });
+      send(ws, { type: 'chatlog', you: ws.ctx.pid, log: chat.log(room) });
       return sendState(room, ws.ctx.pid, ws);
     }
     if (!p) {
@@ -346,6 +350,7 @@ function createApp(options = {}) {
     ws.ctx = { room, pid };
     room.lastActive = Date.now();
     send(ws, { type: 'joined', code: room.code, token: tokenOf(room, pid) });
+    send(ws, { type: 'chatlog', you: pid, log: chat.log(room) });
     if (!settle(room)) sendState(room, pid, ws);
   }
 
@@ -416,6 +421,14 @@ function createApp(options = {}) {
     const { room, pid } = ws.ctx;
     const g = room.game;
     room.lastActive = Date.now();
+    if (m.type === 'chat') {
+      const me = g.byId(pid);
+      const r = me ? chat.add(room, pid, me.name, m) : { error: 'Not seated' };
+      if (r.error) return send(ws, { type: 'chaterr', msg: r.error });
+      const out = JSON.stringify({ type: 'chat', msg: r.msg });
+      for (const sock of room.sockets.values()) send(sock, out);
+      return;
+    }
     if (m.type === 'react') {
       const now = Date.now();
       if (!REACTIONS.includes(m.e) || now - ws.lastReact < C.reactGapMs) return;
